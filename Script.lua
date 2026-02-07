@@ -1,16 +1,26 @@
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
--- Function to create the loading UI
-local function createLoadingUI()
-    local playerGui = player:WaitForChild("PlayerGui")
+-- Global state so it persists across deaths
+local progress = 0
+local isWaiting = false
 
-    -- Check if UI already exists
-    if playerGui:FindFirstChild("IntroLoadingGui") then
-        return playerGui.IntroLoadingGui
+-- Ensure PlayerGui exists
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Create or get existing UI
+local function getLoadingUI()
+    local gui = playerGui:FindFirstChild("IntroLoadingGui")
+    if gui then
+        local frame = gui:WaitForChild("LoadingFrame")
+        return {
+            Gui = gui,
+            Bar = frame:WaitForChild("LoadingBarBackground"):WaitForChild("LoadingBar"),
+            Title = frame:WaitForChild("LoadingTitle")
+        }
     end
 
-    -- Create UI
+    -- Create new GUI
     local LoadingGui = Instance.new("ScreenGui")
     LoadingGui.Name = "IntroLoadingGui"
     LoadingGui.Parent = playerGui
@@ -18,6 +28,7 @@ local function createLoadingUI()
     LoadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
     local LoadingFrame = Instance.new("Frame")
+    LoadingFrame.Name = "LoadingFrame"
     LoadingFrame.Parent = LoadingGui
     LoadingFrame.Size = UDim2.new(0, 300, 0, 150)
     LoadingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -26,11 +37,12 @@ local function createLoadingUI()
     LoadingFrame.BorderSizePixel = 4
     LoadingFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
 
-    local LoadingFrameCorner = Instance.new("UICorner")
-    LoadingFrameCorner.CornerRadius = UDim.new(0, 16)
-    LoadingFrameCorner.Parent = LoadingFrame
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 16)
+    UICorner.Parent = LoadingFrame
 
     local LoadingTitle = Instance.new("TextLabel")
+    LoadingTitle.Name = "LoadingTitle"
     LoadingTitle.Parent = LoadingFrame
     LoadingTitle.Size = UDim2.new(1, -20, 0.5, 0)
     LoadingTitle.Position = UDim2.new(0, 10, 0, 10)
@@ -41,53 +53,56 @@ local function createLoadingUI()
     LoadingTitle.TextScaled = true
 
     local LoadingBarBackground = Instance.new("Frame")
+    LoadingBarBackground.Name = "LoadingBarBackground"
     LoadingBarBackground.Parent = LoadingFrame
     LoadingBarBackground.Size = UDim2.new(0.8, 0, 0.1, 0)
     LoadingBarBackground.Position = UDim2.new(0.1, 0, 0.7, 0)
     LoadingBarBackground.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 
     local LoadingBar = Instance.new("Frame")
+    LoadingBar.Name = "LoadingBar"
     LoadingBar.Parent = LoadingBarBackground
-    LoadingBar.Size = UDim2.new(0, 0, 1, 0)
+    LoadingBar.Size = UDim2.new(progress / 100, 0, 1, 0)
     LoadingBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 
-    return {
-        Gui = LoadingGui,
-        Bar = LoadingBar,
-        Title = LoadingTitle
-    }
+    return {Gui = LoadingGui, Bar = LoadingBar, Title = LoadingTitle}
 end
 
--- Function to run loading
-local function runLoading(uiElements)
-    local steps = 100
-    local delayTime = 60 / steps -- spread 1 minute over 100 steps
+local ui = getLoadingUI()
 
-    for i = 1, steps do
-        uiElements.Bar.Size = UDim2.new(i / steps, 0, 1, 0)
-        task.wait(delayTime)
-    end
+-- Function to run loading continuously
+local function runLoading()
+    spawn(function()
+        while true do
+            if not isWaiting then
+                for i = progress + 1, 100 do
+                    progress = i
+                    ui.Bar.Size = UDim2.new(progress / 100, 0, 1, 0)
+                    task.wait(60 / 100) -- 1 minute total
+                end
 
-    -- Full 100% reached
-    uiElements.Title.Text = "LOADING COMPLETE PLEASE WAIT"
-    uiElements.Bar.Size = UDim2.new(1, 0, 1, 0)
+                -- Wait 1 minute at 100%
+                isWaiting = true
+                ui.Title.Text = "LOADING COMPLETE PLEASE WAIT"
+                task.wait(60)
+                isWaiting = false
 
-    -- Wait 1 minute before restarting
-    task.wait(60)
-
-    -- Reset and restart loading
-    uiElements.Bar.Size = UDim2.new(0, 0, 1, 0)
-    uiElements.Title.Text = "LOADING SCRIPT PLEASE WAIT..."
-    runLoading(uiElements)
+                -- Reset progress
+                progress = 0
+                ui.Bar.Size = UDim2.new(0, 0, 1, 0)
+                ui.Title.Text = "LOADING SCRIPT PLEASE WAIT..."
+            else
+                task.wait(1)
+            end
+        end
+    end)
 end
 
--- Create UI initially
-local uiElements = createLoadingUI()
-
--- Handle character respawn to make sure UI persists
+-- Ensure UI persists on respawn
 player.CharacterAdded:Connect(function()
-    uiElements = createLoadingUI()
+    ui = getLoadingUI()
+    ui.Bar.Size = UDim2.new(progress / 100, 0, 1, 0)
 end)
 
--- Start loading
-runLoading(uiElements)
+-- Start the loading loop
+runLoading()
